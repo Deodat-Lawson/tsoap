@@ -1,6 +1,8 @@
 {
-  "name": "@tsoap/client",
+  "name": "tsoap",
   "version": "0.0.1",
+  "description": "End-to-end type-safe SOAP client for TypeScript. Generate typed RPC wrappers directly from WSDLs.",
+  "keywords": ["soap", "typescript", "wsdl", "rpc", "trpc", "types", "client", "node-soap", "generator"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,7 +30,6 @@
     "directory": "packages/client"
   },
   "publishConfig": {
-    "access": "public",
     "registry": "https://registry.npmjs.org/"
   }
 }

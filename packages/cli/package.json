@@ -1,6 +1,8 @@
 {
-  "name": "@tsoap/cli",
+  "name": "tsoap-cli",
   "version": "0.0.1",
+  "description": "End-to-end type-safe SOAP client for TypeScript. Generate typed RPC wrappers directly from WSDLs.",
+  "keywords": ["soap", "typescript", "wsdl", "rpc", "trpc", "types", "client", "node-soap", "generator"],
   "type": "module",
   "bin": {
     "tsoap": "./dist/cli.js"
@@ -23,7 +25,6 @@
     "directory": "packages/cli"
   },
   "publishConfig": {
-    "access": "public",
     "registry": "https://registry.npmjs.org/"
   }
 }
