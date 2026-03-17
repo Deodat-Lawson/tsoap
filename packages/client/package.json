@@ -20,5 +20,15 @@
   "devDependencies": {
     "@types/node": "^18.0.0",
     "typescript": "^5.9.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Deodat-Lawson/tsoap.git",
+    "directory": "packages/client"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
