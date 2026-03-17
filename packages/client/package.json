@@ -1,5 +1,5 @@
 {
-  "name": "tsoap",
+  "name": "typed-soap",
   "version": "0.0.1",
   "description": "End-to-end type-safe SOAP client for TypeScript. Generate typed RPC wrappers directly from WSDLs.",
   "keywords": ["soap", "typescript", "wsdl", "rpc", "trpc", "types", "client", "node-soap", "generator"],
