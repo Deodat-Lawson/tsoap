@@ -1,10 +1,10 @@
 {
-  "name": "tsoap-example-weather-api",
+  "name": "tsoap-example-order-api",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "generate": "tsoap generate --input weather.wsdl --output ./generated",
+    "generate": "tsoap generate --input order.wsdl --output ./generated",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
