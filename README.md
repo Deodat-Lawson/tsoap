@@ -8,20 +8,38 @@
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [How to use typed-soap](#how-to-use-typed-soap)
+- [CLI Reference](#cli-reference)
+- [Runtime API](#runtime-api)
+- [Supported XSD Types](#supported-xsd-types)
+- [typed-soap vs the soap package](#typed-soap-vs-the-soap-package)
+- [How It Works](#how-it-works)
+- [Examples](#examples)
+- [Support](#support)
+- [Contributing](#contributing)
+
 ## Overview
 
 Legacy SOAP APIs are everywhere, but calling them from TypeScript is painful: no autocomplete, no type checking, and lots of manual XML wrangling.
 
 **typed-soap** fixes this with a two-phase approach:
 
-1. **Generate** (`tsoap-cli`) -- Point the CLI at a WSDL file and it generates TypeScript interfaces, a service definition type, and a typed factory function.
-2. **Use** (`typed-soap`) -- Import the generated factory, get a fully typed client with autocomplete on every service, port, and operation.
+1. **Generate** (`tsoap-cli`) — Point the CLI at a WSDL file and it generates TypeScript interfaces, a service definition type, and a typed factory function.
+2. **Use** (`typed-soap`) — Import the generated factory, get a fully typed client with autocomplete on every service, port, and operation.
+
+See [How to use typed-soap](#how-to-use-typed-soap) for a step-by-step guide.
 
 ```
 weather.wsdl  -->  tsoap generate  -->  generated/weather.ts  -->  your app (fully typed)
 ```
 
 ## Quick Start
+
+**Requirements:** Node.js 18+, TypeScript 5.x (optional, for type generation)
 
 ### Install
 
@@ -49,6 +67,62 @@ console.log(result.description); // string
 ```
 
 Every property is fully typed. Typos in service names, port names, operation names, or arguments are caught at compile time.
+
+## How to use typed-soap
+
+### 1. Generate types (one-time or when WSDL changes)
+
+```bash
+npx tsoap generate --input ./path/to/your.wsdl --output ./generated
+```
+
+This creates `generated/your.ts` (named after the input file) with TypeScript interfaces and a factory function. The factory name is derived from the WSDL service (e.g. `WeatherService` → `createWeatherServiceClient`).
+
+### 2. Create the client
+
+```typescript
+import { createWeatherServiceClient } from './generated/weather.js';
+
+const client = await createWeatherServiceClient('https://api.example.com/weather?wsdl');
+```
+
+### 3. Call operations
+
+Use the three-level path: **Service → Port → Operation**. Pass a plain object as input; get a typed result.
+
+```typescript
+// client.ServiceName.PortName.OperationName(input)
+const result = await client.WeatherService.WeatherPort.GetWeather({ city: 'NYC' });
+//    ^? { temperature: number; description: string; ... }
+
+const order = await client.OrderService.OrderPort.CreateOrder({
+  customerId: 123,
+  items: [{ sku: 'ABC', quantity: 2 }],
+});
+//    ^? { orderId: number; status: "PENDING" | "SHIPPED"; ... }
+```
+
+### 4. Override the endpoint (optional)
+
+If the WSDL points to a different URL than your runtime endpoint:
+
+```typescript
+import { createSoapClient } from 'typed-soap';
+import type { WeatherServiceDefinition } from './generated/weather.js';
+
+const client = await createSoapClient<WeatherServiceDefinition>(wsdlUrl, {
+  endpoint: 'https://production.example.com/soap',
+});
+```
+
+### Call pattern summary
+
+| Step | Code |
+|------|------|
+| Create client | `const client = await createXxxClient(wsdlUrl)` |
+| Call operation | `const result = await client.Service.Port.Operation(input)` |
+| Input | Plain object matching the WSDL request schema |
+| Output | Typed object; `await` returns the result directly (no tuple) |
 
 ## CLI Reference
 
@@ -120,6 +194,21 @@ const client = await createWeatherServiceClient(url);
 | Arrays (`maxOccurs="unbounded"`) | `T[]` | |
 | Optional (`minOccurs="0"`) | `T \| undefined` | Optional property |
 
+## typed-soap vs the `soap` package
+
+typed-soap wraps the battle-tested [node-soap](https://github.com/vpulim/node-soap) library and improves the developer experience in several ways:
+
+| Aspect | `soap` package | typed-soap |
+|--------|----------------|------------|
+| **Return value** | Returns `[result, rawResponse, soapHeader, rawRequest]` — you must destructure and ignore the rest | Returns only the result; no tuple unwrapping |
+| **Async API** | Callback-based by default; `*Async` methods return Promises but still resolve to a 4-tuple | All operations are `async` and return the result directly |
+| **Type safety** | No types; everything is `any` | Full end-to-end types generated from WSDL |
+| **Autocomplete** | None | Service, port, and operation names are autocompleted |
+| **Typos** | Fail at runtime (or silently return wrong data) | Caught at compile time |
+| **XSD types** | Many numeric types (e.g. `unsignedInt`) fall through as raw strings | Custom deserializer converts them to proper `number` values |
+| **Introspection** | Use `client.describe()` manually | `$describe()`, `$services`, `$ports`, `$operations` at each level for debugging |
+| **Brand checking** | No way to detect a soap client at runtime | `Symbol.for("tsoap.client")` for type guards |
+
 ## How It Works
 
 ### The `InferClient<T>` type
@@ -144,14 +233,25 @@ At runtime, `createSoapClient` wraps the `soap.Client` in a 3-level nested `Prox
 
 1. **Level 1** (service name) returns a proxy for ports
 2. **Level 2** (port name) returns a proxy for operations
-3. **Level 3** (operation name) returns an async function that calls `client[service][port][operationAsync](...)`
+3. **Level 3** (operation name) returns an async function that calls `client[service][port][operationAsync](...)` and returns only the first element of the response tuple
 
-This means zero overhead at the type level (types are erased at compile time) and minimal overhead at runtime (just property access delegation).
+**Design choices:**
+
+- **Allowlist, not throw** — Unknown property accesses return `undefined` instead of throwing. TypeScript's `InferClient<T>` provides compile-time safety; the allowlist keeps the proxy compatible with loggers, test frameworks, bundlers, and devtools that introspect objects.
+- **Full Proxy traps** — `has`, `ownKeys`, and `getOwnPropertyDescriptor` are implemented so `Object.keys(proxy)`, `"ServiceName" in proxy`, and spread work correctly.
+- **Introspection helpers** — At each level: `$describe()` returns the WSDL structure, `$services` / `$ports` / `$operations` list available names. Use `Symbol.for("tsoap.client")` to detect a typed-soap client at runtime.
+
+Zero overhead at the type level (types are erased at compile time) and minimal overhead at runtime (property access delegation).
 
 ## Examples
 
 - [`examples/weather-api`](examples/weather-api) -- Simple single-operation service
 - [`examples/order-api`](examples/order-api) -- Complex service with arrays, enums, optional fields, and multiple operations
+
+## Support
+
+- [Report an issue](https://github.com/Deodat-Lawson/tsoap/issues)
+- [View source](https://github.com/Deodat-Lawson/tsoap)
 
 ## Contributing
 

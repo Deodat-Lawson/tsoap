@@ -1,9 +1,22 @@
 {
   "name": "typed-soap",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "End-to-end type-safe SOAP client for TypeScript. Generate typed RPC wrappers directly from WSDLs.",
-  "keywords": ["soap", "typescript", "wsdl", "rpc", "trpc", "types", "client", "node-soap", "generator"],
+  "keywords": [
+    "soap",
+    "typescript",
+    "wsdl",
+    "rpc",
+    "trpc",
+    "types",
+    "client",
+    "node-soap",
+    "generator"
+  ],
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -24,6 +37,9 @@
     "typescript": "^5.9.2"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Deodat-Lawson/tsoap.git",

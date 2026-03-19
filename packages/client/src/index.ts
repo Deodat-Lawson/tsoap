@@ -3,6 +3,7 @@ import type { ServiceDefinition, InferClient, SoapClientOptions } from "./types.
 import { typedSoapDeserializer } from "./deserializer.js";
 import { createClientProxy } from "./proxy.js";
 
+export { TSOAP_BRAND } from "./proxy.js";
 export type { ServiceDefinition, OperationDefinition, InferClient, SoapClientOptions } from "./types.js";
 
 /**

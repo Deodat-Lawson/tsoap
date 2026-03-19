@@ -34,8 +34,14 @@ function emitInterface(type: ParsedType): string {
   return lines.join("\n");
 }
 
+function escapeStringLiteral(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 function emitEnum(enumType: ParsedEnum): string {
-  const values = enumType.values.map((v) => `"${v}"`).join(" | ");
+  const values = enumType.values
+    .map((v) => `"${escapeStringLiteral(v)}"`)
+    .join(" | ");
   return `export type ${enumType.name} = ${values};`;
 }
 

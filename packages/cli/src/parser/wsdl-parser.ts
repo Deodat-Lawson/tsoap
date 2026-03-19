@@ -3,11 +3,9 @@ import { stripNamespace, resolveXsdPrimitive } from "../generator/xsd-types.js";
 
 export interface ParsedField {
   name: string;
-  /** TypeScript type as a source string (e.g. "string", "number", "MyInterface") */
   tsType: string;
   isArray: boolean;
   isOptional: boolean;
-  /** If true, the generated type should include a JSDoc precision warning */
   precisionRisk: boolean;
 }
 
@@ -119,8 +117,11 @@ function resolveElementNames(
     if (inputName && outputName) {
       return { input: inputName, output: outputName };
     }
-  } catch {
-    // fall through
+  } catch (err) {
+    if (err instanceof TypeError) {
+      return null;
+    }
+    throw err;
   }
   return null;
 }
@@ -164,8 +165,67 @@ function extractFields(node: unknown): SchemaFieldInfo[] {
   return fields;
 }
 
+const TS_RESERVED_WORDS = new Set([
+  "break", "case", "catch", "class", "const", "continue", "debugger",
+  "default", "delete", "do", "else", "enum", "export", "extends",
+  "false", "finally", "for", "function", "if", "import", "in",
+  "instanceof", "new", "null", "return", "super", "switch", "this",
+  "throw", "true", "try", "typeof", "var", "void", "while", "with",
+  "yield", "let", "static", "implements", "interface", "package",
+  "private", "protected", "public", "type",
+]);
+
+const TS_GLOBAL_TYPES = new Set([
+  "Date", "Error", "Map", "Set", "Array", "Object", "Function",
+  "Number", "String", "Boolean", "Symbol", "Promise", "RegExp",
+  "Buffer", "Record", "Partial", "Required", "Readonly", "Pick",
+  "Omit", "Exclude", "Extract", "NonNullable", "ReturnType",
+  "InstanceType", "Parameters",
+]);
+
+/**
+ * Converts a string to PascalCase, splitting on hyphens, dots,
+ * underscores, and whitespace.
+ */
 function pascalCase(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
+  return str
+    .split(/[-._\s]+/)
+    .filter(Boolean)
+    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+    .join("");
+}
+
+/**
+ * Ensures a string is a valid TypeScript identifier.
+ * Strips invalid characters, handles leading digits,
+ * and avoids TS reserved words (for type names).
+ */
+function sanitizeTypeName(raw: string): string {
+  let name = pascalCase(raw);
+  name = name.replace(/[^a-zA-Z0-9_$]/g, "");
+  if (!name || /^[0-9]/.test(name)) {
+    name = "_" + name;
+  }
+  if (TS_RESERVED_WORDS.has(name)) {
+    name = name + "Type";
+  }
+  if (TS_GLOBAL_TYPES.has(name)) {
+    name = name + "Type";
+  }
+  return name;
+}
+
+/**
+ * Sanitizes a field name for use in a TypeScript interface.
+ * TS allows reserved words as property names, so we only strip
+ * characters that are invalid in identifiers and handle leading digits.
+ */
+function sanitizeFieldName(raw: string): string {
+  let name = raw.replace(/[^a-zA-Z0-9_$]/g, "_");
+  if (!name || /^[0-9]/.test(name)) {
+    name = "_" + name;
+  }
+  return name;
 }
 
 /**
@@ -182,6 +242,7 @@ function parseFieldDescriptor(
 ): ParsedField {
   const isArray = fieldName.endsWith("[]");
   const cleanName = isArray ? fieldName.slice(0, -2) : fieldName;
+  const safeName = sanitizeFieldName(cleanName);
 
   const schemaField = parentSchemaInfo?.fields.find(
     (f) => f.name === cleanName,
@@ -191,13 +252,13 @@ function parseFieldDescriptor(
   if (typeof descriptor === "string") {
     const enumMatch = descriptor.match(/^(\w+)\|[^|]+\|(.+)$/);
     if (enumMatch) {
-      const enumName = enumMatch[1];
+      const enumName = sanitizeTypeName(enumMatch[1]);
       const values = enumMatch[2].split(",");
       if (!collectedEnums.has(enumName)) {
         collectedEnums.set(enumName, { name: enumName, values });
       }
       return {
-        name: cleanName,
+        name: safeName,
         tsType: enumName,
         isArray,
         isOptional,
@@ -209,7 +270,7 @@ function parseFieldDescriptor(
     const primitive = resolveXsdPrimitive(localName);
     if (primitive) {
       return {
-        name: cleanName,
+        name: safeName,
         tsType: primitive.tsType,
         isArray,
         isOptional,
@@ -218,7 +279,7 @@ function parseFieldDescriptor(
     }
 
     return {
-      name: cleanName,
+      name: safeName,
       tsType: localName,
       isArray,
       isOptional,
@@ -231,14 +292,12 @@ function parseFieldDescriptor(
 
     if (schemaField?.type) {
       const localTypeName = stripNamespace(schemaField.type);
-      typeName = pascalCase(localTypeName);
+      typeName = sanitizeTypeName(localTypeName);
     } else {
-      typeName = pascalCase(cleanName);
+      typeName = sanitizeTypeName(cleanName);
     }
 
     if (!collectedTypes.has(typeName)) {
-      // BUG 1 FIX: insert placeholder BEFORE recursing to prevent
-      // infinite recursion on self-referencing types (e.g. TreeNode)
       const placeholder: ParsedType = { name: typeName, fields: [] };
       collectedTypes.set(typeName, placeholder);
 
@@ -253,7 +312,7 @@ function parseFieldDescriptor(
       placeholder.fields = fields;
     }
     return {
-      name: cleanName,
+      name: safeName,
       tsType: typeName,
       isArray,
       isOptional,
@@ -262,7 +321,7 @@ function parseFieldDescriptor(
   }
 
   return {
-    name: cleanName,
+    name: safeName,
     tsType: "unknown",
     isArray,
     isOptional,
@@ -334,27 +393,20 @@ export async function parseWsdl(wsdlPath: string): Promise<ParsedWsdl> {
         const opObj = opDesc as Record<string, Record<string, unknown>>;
         const inputDesc = opObj.input ?? {};
         const outputDesc = opObj.output ?? {};
-
-        // BUG 3 FIX: resolve actual element names from the port's binding
-        // instead of guessing based on naming conventions.
         const elementNames = resolveElementNames(client, serviceName, portName, opName);
         const inputElementName = elementNames?.input ?? `${opName}Request`;
         const outputElementName = elementNames?.output ?? `${opName}Response`;
-
-        // BUG 2 FIX: if the type name already exists (e.g. same op name
-        // in a different port), prefix with the port name.
         const inputTypeName = uniqueTypeName(
-          pascalCase(inputElementName),
+          sanitizeTypeName(inputElementName),
           portName,
           collectedTypes,
         );
         const outputTypeName = uniqueTypeName(
-          pascalCase(outputElementName),
+          sanitizeTypeName(outputElementName),
           portName,
           collectedTypes,
         );
-
-        // BUG 3 FIX: look up schema info by the actual element name
+        
         const inputSchemaInfo =
           schemaMap.get(inputElementName) ?? schemaMap.get(inputTypeName);
         const outputSchemaInfo =
